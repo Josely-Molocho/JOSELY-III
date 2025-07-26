@@ -1,0 +1,170 @@
+---
+title: "analisis estadistico"
+author: "josely"
+format: html
+---
+
+# Paquetes
+
+```{r}
+library(googlesheets4)
+library(dplyr)
+library(agricolae)
+library(ggplot2)
+library(FactoMineR)
+library(factoextra)
+
+
+```
+
+Ya cargue los paquetes requeridos
+
+# Importar datos
+
+Importar de googlesheets al Rstudio
+
+```{r}
+url <- "https://docs.google.com/spreadsheets/d/1_bPmd_da-6QcWXyDx9YXKlLjwszQU900X0a8EumKueo/edit?gid=1651008594#gid=1651008594"
+
+gs <- url %>% 
+  as_sheets_id()
+
+fb <- gs %>% 
+  range_read(sheet = "fb")
+
+```
+
+# convertir factores
+
+```{r}
+fb$fer_dias  <- as.factor(fb$fer_dias)     # tiempo de fermentación
+fb$propormn  <- as.factor(fb$propormn)     # proporción mucílago/naranjilla
+
+#confirmar estructura
+str(fb)
+
+```
+
+# Modelo estadistico
+
+```{r}
+# Para cada variable respuesta Y (ph, brix, acdz, g_alc) se ajusta:
+# 
+#   Y_ijk = μ + A_i + B_j + (AB)_ij + ε_ijk
+
+# Donde:
+#   μ       = media general
+#   A_i     = efecto del i-ésimo nivel del factor A (fer_dias)
+#   B_j     = efecto del j-ésimo nivel del factor B (propormn)
+#   (AB)_ij = efecto de la interacción entre ambos factores
+#   ε_ijk   = error experimental aleatorio ~ N(0, σ²)
+
+```
+
+
+#anova para acidez
+
+```{r}
+modelo_acdz <- aov( acdz~ fer_dias * propormn, data = fb)
+summary(modelo_acdz)
+
+```
+
+#comparacion de medias Tukey
+
+```{r}
+tukey_acdz <- HSD.test(modelo_acdz, trt = c("fer_dias","propormn"), group = TRUE)
+
+# Preparar datos para gráfico
+
+df_medias <- tukey_acdz$groups
+df_medias <- df_medias %>%
+  tibble::rownames_to_column(var = "trat")
+
+# Renombrar la primera columna de medias a "media"
+colnames(df_medias)[2] <- "media"
+# Revisar
+print(df_medias)
+
+```
+
+# grafico de barras
+
+```{r}
+ggplot(df_medias, aes(x = trat, y = media)) +
+  geom_bar(stat = "identity", fill = "pink") +
+  geom_text(aes(label = groups), vjust = -0.5, color = "blue", size = 5) +
+  labs(title = "Comparación de medias para acidez",
+       x = "Tratamientos",
+       y = "Media acidez") +
+  theme_minimal()
+```
+#grafico lineal 
+
+```{r}
+ggplot(fb, aes(x = fer_dias, y = acdz, color = propormn, group = propormn)) +
+  # Línea de las medias
+  stat_summary(fun = mean, geom = "line", linewidth = 1.2) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+  # Etiquetas y estilo
+  labs(
+    title = "Evolución de la acidez (acdz) según tiempo y proporción",
+    x = "Tiempo de fermentación (días)",
+    y = "Acidez titulable (%)",
+    color = "Proporción\nMucílago/Naranjilla"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",            
+    plot.title = element_text(face = "bold", hjust = 0.5)
+    )
+```
+
+
+
+#PCA
+
+```{r}
+# 1. Variables numéricas
+fb_num <- fb[, c("ph", "brix", "acdz", "g_alc")]
+fb_num <- as.data.frame(fb_num)
+
+# 2. Crear identificadores únicos
+
+id_trat <- paste(fb$fer_dias, fb$propormn, sep = "_")
+rownames(fb_num) <- make.unique(id_trat)
+head(fb_num)
+
+# PCA con estandarización
+res_pca <- PCA(fb_num, scale.unit = TRUE, graph = FALSE)
+
+# Biplot (tratamientos y variables)
+fviz_pca_biplot(res_pca,
+                repel = TRUE,
+                col.var = "red",
+                col.ind = "blue")
+
+# Individuos (tratamientos) agrupados por tiempo de fermentación
+fviz_pca_ind(res_pca,
+             repel = TRUE,
+             habillage = fb$fer_dias, 
+             addEllipses = TRUE)
+
+# Variables
+fviz_pca_var(res_pca,
+             col.var = "cos2",
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE)
+```
+
+
+
+
+
+
+
+
+
+
+
